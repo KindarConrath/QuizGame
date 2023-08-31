@@ -41,6 +41,7 @@ void onControlButton2();
 void stopSounds();
 void doTimeout();
 void doIntro();
+int posMod(int a, int b);
 
 //lighting controls
 void setLights(bool state);
@@ -222,7 +223,7 @@ int numOffRuns = 0;
 int offRunDirection = FORWARD;
 void offRunner(LightSpeed speed, int runs, Direction direction) {
   offRunAnimSpeed = speed;
-  numOffRuns = runs;
+  numOffRuns = runs * numPlayers;
   offRunDirection = direction;
 
   mgr.addListener(new EvtTimeListener(offRunAnimSpeed, false, (EvtAction)startOffRunIntro));
@@ -251,7 +252,7 @@ bool offRun() {
   digitalWrite(players[offRunCtr].light, LOW);
   digitalWrite(players[posMod((offRunCtr-offRunDirection),numPlayers)].light,HIGH);
   offRunCtr+=offRunDirection;
-  return offRunCtr >= numOffRuns || offRunCtr < 0;
+  return offRunCtr>=numOffRuns || offRunCtr < 0;
 }
 
 void startOffRunOutro() {
@@ -266,7 +267,7 @@ bool offRunOutro() {
 }
 
 int posMod(int a, int b) {
-  return (b + (a % b)) % b
+  return (b + (a % b)) % b;
 }
 
 // void blockingRunnerIntro(LightSpeed speed) {
@@ -436,8 +437,9 @@ void stateMonitor() {
       break;
   }
 
-  if (animCtr > sizeof(currentAnim) / sizeof(anim)) {
-    animCtr == 0;
+  int arrSize = sizeof(currentAnim) / sizeof(anim);
+  if (animCtr > arrSize) {
+    animCtr = 0;
   }
   digitalWrite(14, (currentAnim + animCtr)->state);
 
