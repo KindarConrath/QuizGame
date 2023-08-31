@@ -40,7 +40,7 @@ void onControlButton2();
 //random
 void stopSounds();
 void doTimeout();
-void doIntro();
+bool doIntro();
 int posMod(int a, int b);
 
 //lighting controls
@@ -87,6 +87,8 @@ GameState currentState = Startup;
 
 EvtTimeListener* timer;
 
+bool animPlaying = false;
+
 // Use pins 2 and 3 to communicate with DFPlayer Mini
 static const uint8_t PIN_MP3_TX = 2; // connect to pin 2 on the DFPlayer via a 1K resistor
 static const uint8_t PIN_MP3_RX = 3; // connect to pin 3 on the DFPlayer
@@ -113,7 +115,7 @@ void setup() {
 
   lightsOff();
 
-  doIntro();
+  mgr.addListener(new EvtTimeListener(100, true, (EvtAction)doIntro));
 }
 
 void setupPins() {
@@ -312,7 +314,8 @@ void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction = 
   animBounce = bounce;
   numLoops = animBounce ? numRuns * 2 : numRuns;
   runSpeed = speed;
-  mgr.addListener(new EvtTimeListener(runSpeed, true, (EvtAction)onRunNext));
+  EvtTimeListener *animation = new EvtTimeListener(runSpeed, true, (EvtAction)onRunNext);
+  mgr.addListener(animation);
 }
 
 bool onRunNext() {
@@ -325,9 +328,9 @@ bool onRunNext() {
       runDirection*=-1;
     }
     runPosition = runDirection == FORWARD ? 0 : numPlayers - 1;
-    return true;
+    numLoops--;
   }
-  return false;
+  return numLoops<0;
 }
 
 // void blockingOnRunner(LightSpeed speed, int numRuns, bool bounce, int direction = FORWARD) {
@@ -349,13 +352,27 @@ bool onRunNext() {
 //     }
 // }
 
+int twoWayStep = 0;
+int twoWayLoopMax = 0;
 // TWO WAY RUNNING ANIMATION //
 void twoWayRunner(LightSpeed speed, int numRuns) {
+  twoWayStep = 0;
+  twoWayLoopMax = numRuns * numPlayers;
   mgr.addListener(new EvtTimeListener(speed, true, (EvtAction)twoWayLoop));
 }
 
 bool twoWayLoop() {
-  return false;
+  digitalWrite(players[posMod(twoWayStep-1, numPlayers)].light, LOW);
+  digitalWrite(players[numPlayers - twoWayStep].light, LOW);
+  
+  digitalWrite(players[twoWayStep].light, HIGH);
+  digitalWrite(players[numPlayers - twoWayStep - 1].light, HIGH);
+  
+  twoWayStep++;
+  twoWayStep = twoWayStep % numPlayers;
+
+  twoWayLoopMax--;
+  return twoWayLoopMax<=0;
 }
 
 // void blockingTwoWayRunner(LightSpeed speed, int numRuns) {
@@ -448,17 +465,47 @@ void stateMonitor() {
   mgr.addListener(new EvtTimeListener((currentAnim + animCtr)->time , false, (EvtAction)stateMonitor));
 }
 
+int animStep = 0;
+
 //INTRO SEQUENCE
-void doIntro() {
+bool doIntro() {
   soundPlayer.play(11); // INTRO SOUND
-  // flasher(FAST, 5); // 1.25s  (SPEED * LOOPS)
-  // offRunner(MEDIUM, 3); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
-  // onRunner(MEDIUM, 2, true, FORWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
-  // onRunner(MEDIUM, 2, true, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
-  // twoWayRunner(MEDIUM, 4); // 6s (SPEED * PLAYERS * LOOPS)
-  // onRunner(MEDIUM, 4, false, FORWARD); // 6s (SPEED * PLAYERS * LOOPS)
-  // onRunner(MEDIUM, 4, false, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS)
-  // offRunner(MEDIUM, 3); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
-  // flasher(FAST, 5); // 1.25s (SPEED * LOOPS)
+  if(!animPlaying) {
+    animPlaying = true;
+    switch(animStep) {
+      case 0:
+        flasher(FAST, 5); // 1.25s  (SPEED * LOOPS)
+        break;
+      case 1:
+        offRunner(MEDIUM, 3, FORWARD); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
+        break;
+      case 2:
+        onRunner(MEDIUM, 2, true, FORWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
+        break;
+      case 3:
+        onRunner(MEDIUM, 2, true, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
+        break;
+      case 4:
+        twoWayRunner(MEDIUM, 4); // 6s (SPEED * PLAYERS * LOOPS)
+        break;
+      case 5:
+        onRunner(MEDIUM, 4, false, FORWARD); // 6s (SPEED * PLAYERS * LOOPS)
+        break;
+      case 6:
+        onRunner(MEDIUM, 4, false, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS)
+        break;
+      case 7:
+        offRunner(MEDIUM, 3, BACKWARD); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
+        break;
+      case 8:
+        flasher(FAST, 5); // 1.25s (SPEED * LOOPS)
+        break;
+      default:
+        return true;
+    }
+    animStep++;
   soundPlayer.stop();
+  currentState = Playing;
+  return false;
+  }
 }
