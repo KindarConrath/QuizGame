@@ -41,29 +41,9 @@ void onControlButton2();
 void stopSounds();
 void doTimeout();
 bool doIntro();
-int posMod(int a, int b);
 
 //lighting controls
 void setLights(bool state);
-void lightsOn();
-void lightsOff();
-
-//off runner animation
-void offRunner(LightSpeed speed, int runs, Direction direction);
-void startOffRunIntro();
-bool offRunIntro();
-void startOffRun();
-bool offRun();
-void startOffRunOutro();
-bool offRunOutro();
-
-//on runner animation
-void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction);
-bool onRunNext();
-
-//two way runner animation
-void twoWayRunner(LightSpeed speed, int numRuns);
-bool twoWayLoop();
 
 //flashing animation
 void flasher(LightSpeed speed, int flashes);
@@ -103,7 +83,7 @@ void setup() {
   setupPins();
   mgr.addListener(new EvtTimeListener(1, false, (EvtAction)stateMonitor));
 
-  lightsOn();
+  setLights(HIGH);
 
   enablePlayerButtons();
   enableControlButtons();
@@ -113,9 +93,9 @@ void setup() {
   // Start communication with DFPlayer Mini
   if (soundPlayer.begin(softwareSerial)) soundPlayer.volume(30);
 
-  lightsOff();
+  setLights(LOW);
 
-  mgr.addListener(new EvtTimeListener(100, true, (EvtAction)doIntro));
+  soundPlayer.play(11); // INTRO SOUND
 }
 
 void setupPins() {
@@ -166,7 +146,7 @@ void onControlButton1() {
     timer=NULL;
     currentState = Waiting;
   } else if (currentState == Waiting) {
-    lightsOff();
+    setLights(LOW);
     currentState = Playing;
   } else if (currentState == Playing) {
     doTimeout();
@@ -175,7 +155,7 @@ void onControlButton1() {
     soundPlayer.stop();
     mgr.resetContext();
     mgr.addListener(new EvtTimeListener(1, false, (EvtAction)stateMonitor));
-    lightsOff();
+    setLights(LOW);
     enablePlayerButtons();
     enableControlButtons();
     flasher(MEDIUM, 4);
@@ -196,7 +176,7 @@ void onControlButton2() {
 }
 
 void doTimeout() {
-  lightsOff();
+  setLights(LOW);
   if (currentState == Answering) {
     currentState = Waiting;
     soundPlayer.play(9); //TIMEOUT SOUND
@@ -211,190 +191,12 @@ void setLights(bool state) {
   }
 }
 
-void lightsOn() {
-  setLights(HIGH);
-}
-
-void lightsOff() {
-  setLights(LOW);
-}
-
-// ONE LIGHT OFF RUNNING ANIMATION //
-int offRunAnimSpeed = MEDIUM;
-int numOffRuns = 0;
-int offRunDirection = FORWARD;
-void offRunner(LightSpeed speed, int runs, Direction direction) {
-  offRunAnimSpeed = speed;
-  numOffRuns = runs * numPlayers;
-  offRunDirection = direction;
-
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, false, (EvtAction)startOffRunIntro));
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed * numPlayers, false, (EvtAction)startOffRun));
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed * numPlayers + offRunAnimSpeed * numPlayers * numOffRuns, false, (EvtAction)startOffRunOutro));
-}
-
-int offRunCtr = 0;
-void startOffRunIntro() {
-  offRunCtr = offRunDirection == FORWARD ? 0 : numPlayers - 1;
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, true, (EvtAction)offRunIntro));  
-}
-
-bool offRunIntro() {
-  digitalWrite(players[offRunCtr].light, HIGH);
-  offRunCtr+=offRunDirection;
-  return offRunCtr>=numPlayers || offRunCtr < 0;
-}
-
-void startOffRun() {
-  offRunCtr = offRunDirection == FORWARD ? 0 : numPlayers - 1;
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, true, (EvtAction)offRun));  
-}
-
-bool offRun() {
-  digitalWrite(players[offRunCtr].light, LOW);
-  digitalWrite(players[posMod((offRunCtr-offRunDirection),numPlayers)].light,HIGH);
-  offRunCtr+=offRunDirection;
-  return offRunCtr>=numOffRuns || offRunCtr < 0;
-}
-
-void startOffRunOutro() {
-  offRunCtr = offRunDirection == FORWARD ? 0 : numPlayers - 1;
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, true, (EvtAction)offRunOutro));    
-}
-
-bool offRunOutro() {
-  digitalWrite(players[offRunCtr].light, LOW);
-  offRunCtr+=offRunDirection;
-  return offRunCtr>=numPlayers || offRunCtr < 0;
-}
-
-int posMod(int a, int b) {
-  return (b + (a % b)) % b;
-}
-
-// void blockingRunnerIntro(LightSpeed speed) {
-//   for(Player player : players) {
-//     delay(speed);
-//     digitalWrite(player.light, HIGH);
-//   }
-// }
-
-// void blockingRunnerOutro(LightSpeed speed) {
-//   for (Player player : players) {
-//     delay(speed);
-//     digitalWrite(player.light, LOW);
-//   }
-// }
-
-// void blockingOffRunner(LightSpeed speed, int numRuns) {
-//   blockingRunnerIntro(speed);
-
-//   for(int numLoops = 0; numLoops < numRuns; numLoops++) {
-//     for(Player player : players) {
-//       digitalWrite(player.light, LOW);
-//       delay(speed);
-//       digitalWrite(player.light, HIGH);
-//     }
-//   }
-
-//   blockingRunnerOutro(speed);
-// }
-
-// ONE LIGHT ON RUNNING ANIMATION //
-int numLoops = 0;
-int runDirection = FORWARD;
-bool animBounce = false;
-int runPosition = 0;
-LightSpeed runSpeed = SLOW;
-
-void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction = FORWARD) {
-  lightsOff();
-  runDirection = direction;
-  runPosition = runDirection == FORWARD ? 0 : numPlayers - 1;
-  animBounce = bounce;
-  numLoops = animBounce ? numRuns * 2 : numRuns;
-  runSpeed = speed;
-  EvtTimeListener *animation = new EvtTimeListener(runSpeed, true, (EvtAction)onRunNext);
-  mgr.addListener(animation);
-}
-
-bool onRunNext() {
-  digitalWrite(players[posMod((runPosition - runDirection), numPlayers)].light, LOW);
-  digitalWrite(players[runPosition % numPlayers].light, HIGH);
-
-  runPosition+=runDirection;
-  if (runPosition < 0 || runPosition >= numPlayers) {
-    if (animBounce) {
-      runDirection*=-1;
-    }
-    runPosition = runDirection == FORWARD ? 0 : numPlayers - 1;
-    numLoops--;
-  }
-  return numLoops<0;
-}
-
-// void blockingOnRunner(LightSpeed speed, int numRuns, bool bounce, int direction = FORWARD) {
-//     lightsOff();
-//     if (bounce) {
-//       numRuns*=2; //double number of runs
-//     }
-
-//     for(int runs = 0; runs < numRuns; runs++) {
-//       for(int player = 0; player < numPlayers; player++) {
-//         digitalWrite(players[(player - direction) % numPlayers].light, LOW);
-//         digitalWrite(players[player].light, HIGH);
-//         delay(speed);
-//       }
-
-//       if (bounce) {
-//         direction*=-1;
-//       }
-//     }
-// }
-
-int twoWayStep = 0;
-int twoWayLoopMax = 0;
-// TWO WAY RUNNING ANIMATION //
-void twoWayRunner(LightSpeed speed, int numRuns) {
-  twoWayStep = 0;
-  twoWayLoopMax = numRuns * numPlayers;
-  mgr.addListener(new EvtTimeListener(speed, true, (EvtAction)twoWayLoop));
-}
-
-bool twoWayLoop() {
-  digitalWrite(players[posMod(twoWayStep-1, numPlayers)].light, LOW);
-  digitalWrite(players[numPlayers - twoWayStep].light, LOW);
-  
-  digitalWrite(players[twoWayStep].light, HIGH);
-  digitalWrite(players[numPlayers - twoWayStep - 1].light, HIGH);
-  
-  twoWayStep++;
-  twoWayStep = twoWayStep % numPlayers;
-
-  twoWayLoopMax--;
-  return twoWayLoopMax<=0;
-}
-
-// void blockingTwoWayRunner(LightSpeed speed, int numRuns) {
-//   lightsOff();
-
-//   for(int runs = 0; runs < numRuns; runs++) {
-//     for(int player = 0; player < numPlayers - 1; player++) {
-//       digitalWrite(players[player].light, HIGH);
-//       digitalWrite(players[(numPlayers - 1) - player].light, HIGH);
-//       delay(speed);
-//       digitalWrite(players[player].light, LOW);
-//       digitalWrite(players[(numPlayers - 1) - player].light, LOW);
-//     }
-//   }
-// }
-
 // FLASHING ANIMATION //
 bool blinkState = LOW;
 int numFlashes = 0;
 
 void flasher(LightSpeed speed, int flashes) {
-  lightsOn();
+  setLights(HIGH);
   numFlashes = flashes * 2;
   blinkState = LOW;
   mgr.addListener(new EvtTimeListener(speed, true, (EvtAction)blink));
@@ -407,16 +209,6 @@ bool blink(int counter) {
   numFlashes--;
   return numFlashes <= 0;
 }
-
-// void blockingflasher(LightSpeed speed, int flashes) {
-//   lightsOff();
-//   for(int numFlashes = 0; numFlashes < flashes; numFlashes++) {
-//     lightsOn();
-//     delay(speed);
-//     lightsOff();
-//     delay(speed);
-//   }
-// }
 
 struct anim {
   bool state;
@@ -463,49 +255,4 @@ void stateMonitor() {
   animCtr++;
   
   mgr.addListener(new EvtTimeListener((currentAnim + animCtr)->time , false, (EvtAction)stateMonitor));
-}
-
-int animStep = 0;
-
-//INTRO SEQUENCE
-bool doIntro() {
-  soundPlayer.play(11); // INTRO SOUND
-  if(!animPlaying) {
-    animPlaying = true;
-    switch(animStep) {
-      case 0:
-        flasher(FAST, 5); // 1.25s  (SPEED * LOOPS)
-        break;
-      case 1:
-        offRunner(MEDIUM, 3, FORWARD); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
-        break;
-      case 2:
-        onRunner(MEDIUM, 2, true, FORWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
-        break;
-      case 3:
-        onRunner(MEDIUM, 2, true, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
-        break;
-      case 4:
-        twoWayRunner(MEDIUM, 4); // 6s (SPEED * PLAYERS * LOOPS)
-        break;
-      case 5:
-        onRunner(MEDIUM, 4, false, FORWARD); // 6s (SPEED * PLAYERS * LOOPS)
-        break;
-      case 6:
-        onRunner(MEDIUM, 4, false, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS)
-        break;
-      case 7:
-        offRunner(MEDIUM, 3, BACKWARD); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
-        break;
-      case 8:
-        flasher(FAST, 5); // 1.25s (SPEED * LOOPS)
-        break;
-      default:
-        return true;
-    }
-    animStep++;
-  soundPlayer.stop();
-  currentState = Playing;
-  return false;
-  }
 }
