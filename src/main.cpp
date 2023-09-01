@@ -184,14 +184,14 @@ void onControlButton1() {
 
 void onControlButton2() {
   if (currentState == Answering || currentState == Waiting) {
-    soundPlayer.play(14); //CORRECT ANSWER SOUND
+    soundPlayer.play(3); //CORRECT ANSWER SOUND
     if (timer) {
       mgr.removeListener(timer);
       timer = NULL;
     }
     currentState = Playing;
   } else if (currentState == Playing) {
-    soundPlayer.play(15); //THINKING MUSIC
+    soundPlayer.play(4); //THINKING MUSIC
   }
 }
 
@@ -199,7 +199,7 @@ void doTimeout() {
   lightsOff();
   if (currentState == Answering) {
     currentState = Waiting;
-    soundPlayer.play(9); //TIMEOUT SOUND
+    soundPlayer.play(1); //TIMEOUT SOUND
     timer = NULL;
     mgr.addListener(new EvtTimeListener(3000, false, (EvtAction)stopSounds));
   }
@@ -469,7 +469,7 @@ int animStep = 0;
 
 //INTRO SEQUENCE
 bool doIntro() {
-  soundPlayer.play(11); // INTRO SOUND
+  soundPlayer.play(2); // INTRO SOUND
   if(!animPlaying) {
     animPlaying = true;
     switch(animStep) {
