@@ -63,7 +63,6 @@ void onRunNext();
 int posMod(int a, int b);
 void flasher(LightSpeed, int);
 void blink();
-void flash4();
 
 taskid_t timeoutTimer = NULL;
 taskid_t animation = NULL;
@@ -77,6 +76,7 @@ void setup() {
         switches.addSwitch(player.button, onBuzzerPressed, NO_REPEAT);
     }
 
+    internalDigitalDevice().pinMode(14, OUTPUT);
     switches.addSwitch(controlButton1, cb1Pressed, NO_REPEAT);
     switches.addSwitch(controlButton2, cb2Pressed, NO_REPEAT);
 
@@ -88,8 +88,7 @@ void setup() {
     if (soundPlayer.begin(softwareSerial)) soundPlayer.volume(30);
 
     soundPlayer.play(introSound);
-    onRunner(MEDIUM, 15, true, FORWARD); // 6 * 250 * 4 = 6000ms
-    taskManager.scheduleOnce(23000, flash4);
+    onRunner(MEDIUM, 15, true, FORWARD); // 6 * 250 * 15 = 22500ms
 }
 
 void loop() {
@@ -129,7 +128,7 @@ void cb1Pressed(pinid_t pin, bool healdDown) {
     taskManager.cancelTask(animation);
     animation = NULL;
     setLights(LOW);
-    flash4();
+    flasher(MEDIUM, 4);
   }
 }
 
@@ -191,7 +190,6 @@ void stateMonitor() {
   stateAnimCtr++;
 
   taskManager.scheduleOnce((currentAnim + stateAnimCtr)->time, stateMonitor);
-  
 }
 
 void doTimeout() {
@@ -246,7 +244,7 @@ void onRunNext() {
 
   if (numAnimLoops < 0) {
     taskManager.cancelTask(animation);
-    animation = NULL;
+    flasher(MEDIUM, 4);
   }
 }
 
@@ -272,8 +270,4 @@ void blink() {
   if (numAnimLoops <= 0) {
     taskManager.cancelTask(animation);
   }
-}
-
-void flash4() {
-    flasher(MEDIUM, 4);
 }

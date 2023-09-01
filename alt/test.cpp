@@ -75,20 +75,17 @@ void loop() {
 void setupPins() {
     for (Player player : players) {
         internalDigitalDevice().pinMode(player.light, OUTPUT);
-    }
-
-    internalDigitalDevice().pinMode(boxLight, OUTPUT);
-
-    for (Player player : players) {
         internalDigitalDevice().pinMode(player.button, INPUT_PULLUP);
     }
 
-    for (int button: controlButtons) {
-        internalDigitalDevice().pinMode(button, INPUT_PULLUP);
-    }
+    internalDigitalDevice().pinMode(boxLight, OUTPUT);
+    internalDigitalDevice().pinMode(controlButtons[0], INPUT_PULLUP);
+    internalDigitalDevice().pinMode(controlButtons[1], INPUT_PULLUP);
 }
 
 void enableButtons() {
+    switches.init(asIoRef(internalDigitalDevice()), SWITCHES_POLL_EVERYTHING, true);
+
     for (Player player : players) {
         switches.addSwitch(player.button, onPlayerPressed, NO_REPEAT);
     }
