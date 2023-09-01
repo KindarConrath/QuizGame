@@ -55,7 +55,7 @@ void stateMonitor();
 EvtManager mgr;
 
 static const int numPlayers = 6;
-static const Player players [numPlayers] = {{A0, 8, 1}, {A1, 9, 2}, {A2, 10, 3}, {A3, 11, 4}, {A4, 12, 5}, {A5, 13, 6}}; //, {A6, 14, 7}, {A7, 15, 8}};
+static const Player players [numPlayers] = {{A0, 8, 5}, {A1, 9, 6}, {A2, 10, 7}, {A3, 11, 8}, {A4, 12, 9}, {A5, 13, 10}}; //, {A6, 14, 7}, {A7, 15, 8}};
 static const int controlButton1 = 1;
 static const int controlButton2 = 0;
 
@@ -95,7 +95,7 @@ void setup() {
 
   setLights(LOW);
 
-  soundPlayer.play(11); // INTRO SOUND
+  soundPlayer.play(2); // INTRO SOUND
 }
 
 void setupPins() {
@@ -164,14 +164,14 @@ void onControlButton1() {
 
 void onControlButton2() {
   if (currentState == Answering || currentState == Waiting) {
-    soundPlayer.play(14); //CORRECT ANSWER SOUND
+    soundPlayer.play(3); //CORRECT ANSWER SOUND
     if (timer) {
       mgr.removeListener(timer);
       timer = NULL;
     }
     currentState = Playing;
   } else if (currentState == Playing) {
-    soundPlayer.play(15); //THINKING MUSIC
+    soundPlayer.play(4); //THINKING MUSIC
   }
 }
 
@@ -179,7 +179,7 @@ void doTimeout() {
   setLights(LOW);
   if (currentState == Answering) {
     currentState = Waiting;
-    soundPlayer.play(9); //TIMEOUT SOUND
+    soundPlayer.play(1); //TIMEOUT SOUND
     timer = NULL;
     mgr.addListener(new EvtTimeListener(3000, false, (EvtAction)stopSounds));
   }
