@@ -212,21 +212,20 @@ void stopSounds() {
   soundPlayer.stop();
 }
 
-// ONE LIGHT ON RUNNING ANIMATION //
+// animation varaibles
 int numAnimLoops = 0;
 int animDirection = FORWARD;
 bool animBounce = false;
 int animPosition = 0;
-LightSpeed animSpeed = SLOW;
 
+// ONE LIGHT ON RUNNING ANIMATION //
 void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction = FORWARD) {
   setLights(LOW);
   animDirection = direction;
   animPosition = animDirection == FORWARD ? 0 : numPlayers - 1;
   animBounce = bounce;
   numAnimLoops = animBounce ? numRuns * 2 : numRuns;
-  animSpeed = speed;
-  animation = taskManager.scheduleFixedRate(animSpeed, onRunNext);
+  animation = taskManager.scheduleFixedRate(speed, onRunNext);
 }
 
 void onRunNext() {
@@ -268,6 +267,29 @@ void blink() {
 
   numAnimLoops--;
   if (numAnimLoops <= 0) {
+    taskManager.cancelTask(animation);
+  }
+}
+
+// TWO WAY RUNNING ANIMATION //
+void twoWayRunner(LightSpeed speed, int numRuns) {
+  animPosition = 0;
+  numAnimLoops = numRuns;
+  animation = taskManager.scheduleFixedRate(speed, twoWayRunnerNext);
+}
+
+void twoWayRunnerNext() {
+  digitalWrite(players[posMod(animPosition-1, numPlayers)].light, LOW);
+  digitalWrite(players[numPlayers - animPosition].light, LOW);
+  
+  digitalWrite(players[animPosition].light, HIGH);
+  digitalWrite(players[numPlayers - animPosition - 1].light, HIGH);
+  
+  animPosition++;
+  animPosition = animPosition % numPlayers;
+
+  numAnimLoops--;
+  if (numAnimLoops == 0) {
     taskManager.cancelTask(animation);
   }
 }
