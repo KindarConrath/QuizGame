@@ -1,5 +1,5 @@
-#include <Arduino.h>
-#include <Eventually.h>
+#include <IoAbstraction.h>
+#include <TaskManagerIO.h>
 #include <DFRobotDFPlayerMini.h>
 #include <SoftwareSerial.h>
 
@@ -8,17 +8,17 @@ enum Direction {
   BACKWARD = -1
 };
 
-enum GameState {
-  Startup,
-  Playing,
-  Answering,
-  Waiting
-};
-
 enum LightSpeed {
   SLOW = 500,
   MEDIUM = 250,
   FAST = 100 
+};
+
+enum GameState {
+  STARTUP,
+  PLAYING,
+  ANSWERING,
+  WAITING
 };
 
 struct Player {
@@ -27,67 +27,17 @@ struct Player {
   unsigned char sound;
 };
 
-//setup
-void setupPins();
-void enablePlayerButtons();
-void enableControlButtons();
-
-//buttonpress events
-void onPlayerPress(EvtListener *lstn);
-void onControlButton1();
-void onControlButton2();
-
-//random
-void stopSounds();
-void doTimeout();
-bool doIntro();
-int posMod(int a, int b);
-
-//lighting controls
-void setLights(bool state);
-void lightsOn();
-void lightsOff();
-
-//off runner animation
-void offRunner(LightSpeed speed, int runs, Direction direction);
-void startOffRunIntro();
-bool offRunIntro();
-void startOffRun();
-bool offRun();
-void startOffRunOutro();
-bool offRunOutro();
-
-//on runner animation
-void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction);
-bool onRunNext();
-
-//two way runner animation
-void twoWayRunner(LightSpeed speed, int numRuns);
-bool twoWayLoop();
-
-//flashing animation
-void flasher(LightSpeed speed, int flashes);
-bool blink(int counter);
-
-//state monitor animation
-void stateMonitor();
-
-EvtManager mgr;
+int timeoutTime = 8000; // time in miliseconds
 
 static const int numPlayers = 6;
-static const Player players [numPlayers] = {{A0, 8, 1}, {A1, 9, 2}, {A2, 10, 3}, {A3, 11, 4}, {A4, 12, 5}, {A5, 13, 6}}; //, {A6, 14, 7}, {A7, 15, 8}};
+static const Player players [numPlayers] = {{A0, 8, 1}, {A1, 9, 2}, {A2, 10, 3}, {A3, 11, 4}, {A4, 12, 5}, {A5, 13, 6}}; //, {A6, 14, 7}, {A7, 15, 8}}; 
 static const int controlButton1 = 1;
 static const int controlButton2 = 0;
 
-int timeoutTime = 8000; // time in miliseconds
-
-Player buzzPlayer;
-
-GameState currentState = Startup;
-
-EvtTimeListener* timer;
-
-bool animPlaying = false;
+static const int introSound = 2;
+static const int timeoutSound = 1;
+static const int thinkingSound = 4;
+static const int correctSound = 3;
 
 // Use pins 2 and 3 to communicate with DFPlayer Mini
 static const uint8_t PIN_MP3_TX = 2; // connect to pin 2 on the DFPlayer via a 1K resistor
@@ -99,324 +49,102 @@ SoftwareSerial softwareSerial(PIN_MP3_RX, PIN_MP3_TX);
 // Player
 DFRobotDFPlayerMini soundPlayer;
 
+GameState currentState = STARTUP;
+
+void onBuzzerPressed(pinid_t, bool);
+void cb1Pressed(pinid_t, bool);
+void cb2Pressed(pinid_t, bool);
+void stateMonitor();
+void doTimeout();
+void stopSounds();
+void setLights(bool);
+void onRunner(LightSpeed, int, bool, Direction);
+void onRunNext();
+int posMod(int a, int b);
+void flasher(LightSpeed, int);
+void blink();
+void flash4();
+
+taskid_t timeoutTimer = NULL;
+taskid_t animation = NULL;
+
 void setup() {
-  setupPins();
-  mgr.addListener(new EvtTimeListener(1, false, (EvtAction)stateMonitor));
+    switches.init(asIoRef(internalDigitalDevice()), SWITCHES_POLL_EVERYTHING, true);
 
-  lightsOn();
-
-  enablePlayerButtons();
-  enableControlButtons();
-
-  // Init serial port for DFPlayer Mini
-  softwareSerial.begin(9600);
-  // Start communication with DFPlayer Mini
-  if (soundPlayer.begin(softwareSerial)) soundPlayer.volume(30);
-
-  lightsOff();
-
-  mgr.addListener(new EvtTimeListener(100, true, (EvtAction)doIntro));
-}
-
-void setupPins() {
-    for (int ctr = 8; ctr <= 14; ctr++) {
-        pinMode(ctr, OUTPUT);
+    for(Player player : players) {
+        internalDigitalDevice().pinMode(player.button, INPUT_PULLUP);
+        internalDigitalDevice().pinMode(player.light, OUTPUT);
+        switches.addSwitch(player.button, onBuzzerPressed, NO_REPEAT);
     }
 
-    for (int ctr = 0; ctr < numPlayers; ctr++) {
-      pinMode(players[ctr].button, INPUT_PULLUP);
+    switches.addSwitch(controlButton1, cb1Pressed, NO_REPEAT);
+    switches.addSwitch(controlButton2, cb2Pressed, NO_REPEAT);
+
+    stateMonitor();
+
+    // Init serial port for DFPlayer Mini
+    softwareSerial.begin(9600);
+    // Start communication with DFPlayer Mini
+    if (soundPlayer.begin(softwareSerial)) soundPlayer.volume(30);
+
+    soundPlayer.play(introSound);
+    onRunner(MEDIUM, 15, true, FORWARD); // 6 * 250 * 4 = 6000ms
+    taskManager.scheduleOnce(23000, flash4);
+}
+
+void loop() {
+    taskManager.runLoop();
+}
+
+void onBuzzerPressed(pinid_t pin, bool healdDown) {
+    if (currentState == PLAYING) {
+        currentState = ANSWERING;
+        Player currentPlayer;
+        for(Player player : players) {
+            if (player.button == pin) {
+                currentPlayer = player;
+                break;
+            }
+        }
+
+        soundPlayer.play(currentPlayer.sound);
+        internalDigitalDevice().digitalWriteS(currentPlayer.light, HIGH);
+        timeoutTimer = taskManager.scheduleOnce(timeoutTime, doTimeout);
     }
-
-    pinMode(controlButton1, INPUT_PULLUP);
-    pinMode(controlButton2, INPUT_PULLUP);
 }
 
-USE_EVENTUALLY_LOOP(mgr)
-
-void enablePlayerButtons() {
-  for (int ctr = 0; ctr < numPlayers; ctr++) {
-    mgr.addListener(new EvtPinListener(players[ctr].button, 1000, LOW, (EvtAction)onPlayerPress, ctr));
-  }
-}
-
-void enableControlButtons() {
-  mgr.addListener(new EvtPinListener(controlButton1, 500, LOW, (EvtAction)onControlButton1));
-  mgr.addListener(new EvtPinListener(controlButton2, 500, LOW, (EvtAction)onControlButton2));
-}
-
-void onPlayerPress(EvtListener *lstn) {
-  if (currentState == Playing) {
-    currentState = Answering;
-    Player player = players[(int)(lstn->extraData)];
-    digitalWrite(player.light, HIGH);
-    soundPlayer.play(player.sound); //PLAYER SPECIFIC DING IN SOUND
-    mgr.addListener(new EvtTimeListener(3000, false, (EvtAction)stopSounds));
-    timer = new EvtTimeListener(timeoutTime, true, (EvtAction)doTimeout);
-    mgr.addListener(timer);
-  }
-}
-
-void stopSounds() {
-  soundPlayer.stop();
-}
-
-void onControlButton1() {
-  if (currentState == Answering) {
-    mgr.removeListener(timer);
-    timer=NULL;
-    currentState = Waiting;
-  } else if (currentState == Waiting) {
-    lightsOff();
-    currentState = Playing;
-  } else if (currentState == Playing) {
+void cb1Pressed(pinid_t pin, bool healdDown) {
+  if (currentState == ANSWERING) {
+    taskManager.cancelTask(timeoutTimer);
+    timeoutTimer = NULL;
+    currentState = WAITING;
+  } else if (currentState == WAITING) {
+    setLights(LOW);
+    currentState = PLAYING;
+  } else if (currentState == PLAYING) {
     doTimeout();
-  } else if (currentState == Startup) {
-    currentState = Playing;
+  } else if (currentState == STARTUP) {
+    currentState = PLAYING;
     soundPlayer.stop();
-    mgr.resetContext();
-    mgr.addListener(new EvtTimeListener(1, false, (EvtAction)stateMonitor));
-    lightsOff();
-    enablePlayerButtons();
-    enableControlButtons();
-    flasher(MEDIUM, 4);
+    taskManager.cancelTask(animation);
+    animation = NULL;
+    setLights(LOW);
+    flash4();
   }
 }
 
-void onControlButton2() {
-  if (currentState == Answering || currentState == Waiting) {
-    soundPlayer.play(3); //CORRECT ANSWER SOUND
-    if (timer) {
-      mgr.removeListener(timer);
-      timer = NULL;
+void cb2Pressed(pinid_t pin, bool healdDown) {
+  if (currentState == ANSWERING || currentState == WAITING) {
+    soundPlayer.play(correctSound); //CORRECT ANSWER SOUND
+    if (timeoutTimer) {
+      taskManager.cancelTask(timeoutTimer);
+      timeoutTimer = NULL;
     }
-    currentState = Playing;
-  } else if (currentState == Playing) {
-    soundPlayer.play(4); //THINKING MUSIC
+    currentState = PLAYING;
+  } else if (currentState == PLAYING) {
+    soundPlayer.play(thinkingSound); //THINKING MUSIC
   }
 }
-
-void doTimeout() {
-  lightsOff();
-  if (currentState == Answering) {
-    currentState = Waiting;
-    soundPlayer.play(1); //TIMEOUT SOUND
-    timer = NULL;
-    mgr.addListener(new EvtTimeListener(3000, false, (EvtAction)stopSounds));
-  }
-}
-
-void setLights(bool state) {
-  for(Player player : players) {
-    digitalWrite(player.light, state);
-  }
-}
-
-void lightsOn() {
-  setLights(HIGH);
-}
-
-void lightsOff() {
-  setLights(LOW);
-}
-
-// ONE LIGHT OFF RUNNING ANIMATION //
-int offRunAnimSpeed = MEDIUM;
-int numOffRuns = 0;
-int offRunDirection = FORWARD;
-void offRunner(LightSpeed speed, int runs, Direction direction) {
-  offRunAnimSpeed = speed;
-  numOffRuns = runs * numPlayers;
-  offRunDirection = direction;
-
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, false, (EvtAction)startOffRunIntro));
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed * numPlayers, false, (EvtAction)startOffRun));
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed * numPlayers + offRunAnimSpeed * numPlayers * numOffRuns, false, (EvtAction)startOffRunOutro));
-}
-
-int offRunCtr = 0;
-void startOffRunIntro() {
-  offRunCtr = offRunDirection == FORWARD ? 0 : numPlayers - 1;
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, true, (EvtAction)offRunIntro));  
-}
-
-bool offRunIntro() {
-  digitalWrite(players[offRunCtr].light, HIGH);
-  offRunCtr+=offRunDirection;
-  return offRunCtr>=numPlayers || offRunCtr < 0;
-}
-
-void startOffRun() {
-  offRunCtr = offRunDirection == FORWARD ? 0 : numPlayers - 1;
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, true, (EvtAction)offRun));  
-}
-
-bool offRun() {
-  digitalWrite(players[offRunCtr].light, LOW);
-  digitalWrite(players[posMod((offRunCtr-offRunDirection),numPlayers)].light,HIGH);
-  offRunCtr+=offRunDirection;
-  return offRunCtr>=numOffRuns || offRunCtr < 0;
-}
-
-void startOffRunOutro() {
-  offRunCtr = offRunDirection == FORWARD ? 0 : numPlayers - 1;
-  mgr.addListener(new EvtTimeListener(offRunAnimSpeed, true, (EvtAction)offRunOutro));    
-}
-
-bool offRunOutro() {
-  digitalWrite(players[offRunCtr].light, LOW);
-  offRunCtr+=offRunDirection;
-  return offRunCtr>=numPlayers || offRunCtr < 0;
-}
-
-int posMod(int a, int b) {
-  return (b + (a % b)) % b;
-}
-
-// void blockingRunnerIntro(LightSpeed speed) {
-//   for(Player player : players) {
-//     delay(speed);
-//     digitalWrite(player.light, HIGH);
-//   }
-// }
-
-// void blockingRunnerOutro(LightSpeed speed) {
-//   for (Player player : players) {
-//     delay(speed);
-//     digitalWrite(player.light, LOW);
-//   }
-// }
-
-// void blockingOffRunner(LightSpeed speed, int numRuns) {
-//   blockingRunnerIntro(speed);
-
-//   for(int numLoops = 0; numLoops < numRuns; numLoops++) {
-//     for(Player player : players) {
-//       digitalWrite(player.light, LOW);
-//       delay(speed);
-//       digitalWrite(player.light, HIGH);
-//     }
-//   }
-
-//   blockingRunnerOutro(speed);
-// }
-
-// ONE LIGHT ON RUNNING ANIMATION //
-int numLoops = 0;
-int runDirection = FORWARD;
-bool animBounce = false;
-int runPosition = 0;
-LightSpeed runSpeed = SLOW;
-
-void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction = FORWARD) {
-  lightsOff();
-  runDirection = direction;
-  runPosition = runDirection == FORWARD ? 0 : numPlayers - 1;
-  animBounce = bounce;
-  numLoops = animBounce ? numRuns * 2 : numRuns;
-  runSpeed = speed;
-  EvtTimeListener *animation = new EvtTimeListener(runSpeed, true, (EvtAction)onRunNext);
-  mgr.addListener(animation);
-}
-
-bool onRunNext() {
-  digitalWrite(players[posMod((runPosition - runDirection), numPlayers)].light, LOW);
-  digitalWrite(players[runPosition % numPlayers].light, HIGH);
-
-  runPosition+=runDirection;
-  if (runPosition < 0 || runPosition >= numPlayers) {
-    if (animBounce) {
-      runDirection*=-1;
-    }
-    runPosition = runDirection == FORWARD ? 0 : numPlayers - 1;
-    numLoops--;
-  }
-  return numLoops<0;
-}
-
-// void blockingOnRunner(LightSpeed speed, int numRuns, bool bounce, int direction = FORWARD) {
-//     lightsOff();
-//     if (bounce) {
-//       numRuns*=2; //double number of runs
-//     }
-
-//     for(int runs = 0; runs < numRuns; runs++) {
-//       for(int player = 0; player < numPlayers; player++) {
-//         digitalWrite(players[(player - direction) % numPlayers].light, LOW);
-//         digitalWrite(players[player].light, HIGH);
-//         delay(speed);
-//       }
-
-//       if (bounce) {
-//         direction*=-1;
-//       }
-//     }
-// }
-
-int twoWayStep = 0;
-int twoWayLoopMax = 0;
-// TWO WAY RUNNING ANIMATION //
-void twoWayRunner(LightSpeed speed, int numRuns) {
-  twoWayStep = 0;
-  twoWayLoopMax = numRuns * numPlayers;
-  mgr.addListener(new EvtTimeListener(speed, true, (EvtAction)twoWayLoop));
-}
-
-bool twoWayLoop() {
-  digitalWrite(players[posMod(twoWayStep-1, numPlayers)].light, LOW);
-  digitalWrite(players[numPlayers - twoWayStep].light, LOW);
-  
-  digitalWrite(players[twoWayStep].light, HIGH);
-  digitalWrite(players[numPlayers - twoWayStep - 1].light, HIGH);
-  
-  twoWayStep++;
-  twoWayStep = twoWayStep % numPlayers;
-
-  twoWayLoopMax--;
-  return twoWayLoopMax<=0;
-}
-
-// void blockingTwoWayRunner(LightSpeed speed, int numRuns) {
-//   lightsOff();
-
-//   for(int runs = 0; runs < numRuns; runs++) {
-//     for(int player = 0; player < numPlayers - 1; player++) {
-//       digitalWrite(players[player].light, HIGH);
-//       digitalWrite(players[(numPlayers - 1) - player].light, HIGH);
-//       delay(speed);
-//       digitalWrite(players[player].light, LOW);
-//       digitalWrite(players[(numPlayers - 1) - player].light, LOW);
-//     }
-//   }
-// }
-
-// FLASHING ANIMATION //
-bool blinkState = LOW;
-int numFlashes = 0;
-
-void flasher(LightSpeed speed, int flashes) {
-  lightsOn();
-  numFlashes = flashes * 2;
-  blinkState = LOW;
-  mgr.addListener(new EvtTimeListener(speed, true, (EvtAction)blink));
-}
-
-bool blink(int counter) {
-  setLights(blinkState);
-  blinkState = !blinkState;
-
-  numFlashes--;
-  return numFlashes <= 0;
-}
-
-// void blockingflasher(LightSpeed speed, int flashes) {
-//   lightsOff();
-//   for(int numFlashes = 0; numFlashes < flashes; numFlashes++) {
-//     lightsOn();
-//     delay(speed);
-//     lightsOff();
-//     delay(speed);
-//   }
-// }
 
 struct anim {
   bool state;
@@ -428,84 +156,124 @@ static const anim playingAnim [] = {{HIGH,200}, {LOW,500}, {LOW, 500}}; //quick 
 static const anim answeringAnim [] = {{HIGH,200}, {LOW,200}, {HIGH,500}, {HIGH,500}, {LOW,200}}; //quick blink, long blink
 static const anim waitingAnim [] = {{HIGH,500}}; //constant on
 
-GameState prevState = Startup;
-int animCtr = 0;
+GameState prevState = STARTUP;
+int stateAnimCtr = 0;
 
 void stateMonitor() {
   const anim *currentAnim;
 
   if (currentState != prevState) {
-    animCtr = 0;
+    stateAnimCtr = 0;
     prevState = currentState;
   }
 
   switch(currentState) {
-    case Startup:
+    case STARTUP:
       currentAnim = startupAnim;
       break;
-    case Playing:
+    case PLAYING:
       currentAnim = playingAnim;
       break;
-    case Answering:
+    case ANSWERING:
       currentAnim = answeringAnim;
       break;
-    case Waiting:
+    case WAITING:
       currentAnim = waitingAnim;
       break;
   }
 
   int arrSize = sizeof(currentAnim) / sizeof(anim);
-  if (animCtr > arrSize) {
-    animCtr = 0;
+  if (stateAnimCtr > arrSize) {
+    stateAnimCtr = 0;
   }
-  digitalWrite(14, (currentAnim + animCtr)->state);
+  digitalWrite(14, (currentAnim + stateAnimCtr)->state);
 
-  animCtr++;
+  stateAnimCtr++;
+
+  taskManager.scheduleOnce((currentAnim + stateAnimCtr)->time, stateMonitor);
   
-  mgr.addListener(new EvtTimeListener((currentAnim + animCtr)->time , false, (EvtAction)stateMonitor));
 }
 
-int animStep = 0;
-
-//INTRO SEQUENCE
-bool doIntro() {
-  soundPlayer.play(2); // INTRO SOUND
-  if(!animPlaying) {
-    animPlaying = true;
-    switch(animStep) {
-      case 0:
-        flasher(FAST, 5); // 1.25s  (SPEED * LOOPS)
-        break;
-      case 1:
-        offRunner(MEDIUM, 3, FORWARD); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
-        break;
-      case 2:
-        onRunner(MEDIUM, 2, true, FORWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
-        break;
-      case 3:
-        onRunner(MEDIUM, 2, true, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS * 2)
-        break;
-      case 4:
-        twoWayRunner(MEDIUM, 4); // 6s (SPEED * PLAYERS * LOOPS)
-        break;
-      case 5:
-        onRunner(MEDIUM, 4, false, FORWARD); // 6s (SPEED * PLAYERS * LOOPS)
-        break;
-      case 6:
-        onRunner(MEDIUM, 4, false, BACKWARD); // 6s (SPEED * PLAYERS * LOOPS)
-        break;
-      case 7:
-        offRunner(MEDIUM, 3, BACKWARD); // 1.25s in, 1.25s out, 4.5s loop (7s) (SPEED * PLAYERS * 2 + SPEED * PLAYERS* LOOPS)
-        break;
-      case 8:
-        flasher(FAST, 5); // 1.25s (SPEED * LOOPS)
-        break;
-      default:
-        return true;
-    }
-    animStep++;
-  soundPlayer.stop();
-  currentState = Playing;
-  return false;
+void doTimeout() {
+  setLights(LOW);
+  if (currentState == ANSWERING) {
+    currentState = WAITING;
+    soundPlayer.play(timeoutSound); //TIMEOUT SOUND
+    timeoutTimer = NULL;
+    taskManager.scheduleOnce(3000, stopSounds);
   }
+}
+
+void setLights(bool state) {
+  for(Player player : players) {
+    internalDigitalDevice().digitalWriteS(player.light, state);
+  }
+}
+
+void stopSounds() {
+  soundPlayer.stop();
+}
+
+// ONE LIGHT ON RUNNING ANIMATION //
+int numAnimLoops = 0;
+int animDirection = FORWARD;
+bool animBounce = false;
+int animPosition = 0;
+LightSpeed animSpeed = SLOW;
+
+void onRunner(LightSpeed speed, int numRuns, bool bounce, Direction direction = FORWARD) {
+  setLights(LOW);
+  animDirection = direction;
+  animPosition = animDirection == FORWARD ? 0 : numPlayers - 1;
+  animBounce = bounce;
+  numAnimLoops = animBounce ? numRuns * 2 : numRuns;
+  animSpeed = speed;
+  animation = taskManager.scheduleFixedRate(animSpeed, onRunNext);
+}
+
+void onRunNext() {
+  digitalWrite(players[posMod((animPosition - animDirection), numPlayers)].light, LOW);
+  digitalWrite(players[animPosition % numPlayers].light, HIGH);
+
+  animPosition+=animDirection;
+  if (animPosition < 0 || animPosition >= numPlayers) {
+    if (animBounce) {
+      animDirection*=-1;
+    }
+    animPosition = animDirection == FORWARD ? 0 : numPlayers - 1;
+    numAnimLoops--;
+  }
+
+  if (numAnimLoops < 0) {
+    taskManager.cancelTask(animation);
+    animation = NULL;
+  }
+}
+
+int posMod(int a, int b) {
+  return (b + (a % b)) % b;
+}
+
+// FLASHING ANIMATION //
+bool blinkState = LOW;
+
+void flasher(LightSpeed speed, int flashes) {
+  setLights(HIGH);
+  numAnimLoops = flashes * 2;
+  blinkState = LOW;
+  animation = taskManager.scheduleFixedRate(speed, blink);
+}
+
+void blink() {
+  setLights(blinkState);
+  blinkState = !blinkState;
+
+  numAnimLoops--;
+  if (numAnimLoops <= 0) {
+    taskManager.cancelTask(animation);
+  }
+}
+
+void flash4() {
+    flasher(MEDIUM, 4);
 }
