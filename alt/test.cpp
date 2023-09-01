@@ -1,24 +1,18 @@
 // TEST FILE
-#include <Arduino.h>
-#include <Eventually.h>
+#include <IoAbstraction.h>
+#include <TaskManagerIO.h>
 #include <DFRobotDFPlayerMini.h>
 #include <SoftwareSerial.h>
 
 void enableButtons();
-void onPlayerPress1();
-void onPlayerPress2();
-void onPlayerPress3();
-void onPlayerPress4();
-void onPlayerPress5();
-void onPlayerPress6();
-void onPlayerPress7();
-void onPlayerPress8();
+void onPlayerPressed(pinid_t pin, bool healdDown);
+void onCB1Pressed(pinid_t pin, bool healdDown);
+void onCB2Pressed(pinid_t pin, bool healdDown);
 void doTimeout();
 void startup();
 void resetLights();
 void setupPins();
-
-EvtManager mgr;
+int posMod(int, int);
 
 enum GameState {
   Startup,
@@ -33,10 +27,15 @@ struct Player {
   unsigned char sound;
 };
 
-static const int lights [6] = {8, 9, 10, 11, 12, 13};
+static const int numPlayers = 6;
+static const Player players [numPlayers] = {{A0, 8, 1}, {A1, 9, 2}, {A2, 10, 3}, {A3, 11, 4}, {A4, 12, 5}, {A5, 13, 6}};
+static const int controlButtons [2] = {0, 1};
+static const int boxLight = 14;
 
 bool first = true;
 bool second = false;
+
+taskid_t timer;
 
 // Use pins 2 and 3 to communicate with DFPlayer Mini
 static const uint8_t PIN_MP3_TX = 2; // connect to pin 2 on the DFPlayer via a 1K resistor
@@ -48,150 +47,105 @@ SoftwareSerial softwareSerial(PIN_MP3_RX, PIN_MP3_TX);
 // Player
 DFRobotDFPlayerMini soundPlayer;
 
-EvtTimeListener* timer;
-
 void setup() {
     setupPins();
 
-    digitalWrite(8, HIGH);
-    digitalWrite(9, HIGH);
-    digitalWrite(10, HIGH);
-    digitalWrite(11, HIGH);
-    digitalWrite(12, HIGH);
-    digitalWrite(13, HIGH);
+    setLights(HIGH);
 
     // Init serial port for DFPlayer Mini
     softwareSerial.begin(9600);
     // Start communication with DFPlayer Mini
     if (soundPlayer.begin(softwareSerial)) soundPlayer.volume(30);
 
-    resetLights();
+    setLights(LOW);
 
-    soundPlayer.play(11);
+    soundPlayer.play(2);
     startup();
 
     enableButtons();
 
-    resetLights();
+    setLights(LOW);
     soundPlayer.stop();
+}
+
+void loop() {
+    taskManager.runLoop();
 }
 
 void setupPins() {
-    for (int ctr = 8; ctr <= 13; ctr++) {
-        pinMode(ctr, OUTPUT);
+    for (Player player : players) {
+        internalDigitalDevice().pinMode(player.light, OUTPUT);
     }
 
-    pinMode(A0, INPUT_PULLUP);
-    pinMode(A1, INPUT_PULLUP);
-    pinMode(A2, INPUT_PULLUP);
-    pinMode(A3, INPUT_PULLUP);
-    pinMode(A4, INPUT_PULLUP);
-    pinMode(A5, INPUT_PULLUP);
-    pinMode(1, INPUT_PULLUP);
-    pinMode(2, INPUT_PULLUP);
+    internalDigitalDevice().pinMode(boxLight, OUTPUT);
+
+    for (Player player : players) {
+        internalDigitalDevice().pinMode(player.button, INPUT_PULLUP);
+    }
+
+    for (int button: controlButtons) {
+        internalDigitalDevice().pinMode(button, INPUT_PULLUP);
+    }
 }
 
 void enableButtons() {
-  mgr.addListener(new EvtPinListener(A0, (EvtAction)onPlayerPress1));
-  mgr.addListener(new EvtPinListener(A1, (EvtAction)onPlayerPress2));
-  mgr.addListener(new EvtPinListener(A2, (EvtAction)onPlayerPress3));
-  mgr.addListener(new EvtPinListener(A3, (EvtAction)onPlayerPress4));
-  mgr.addListener(new EvtPinListener(A4, (EvtAction)onPlayerPress5));
-  mgr.addListener(new EvtPinListener(A5, (EvtAction)onPlayerPress6));
-  mgr.addListener(new EvtPinListener(1, (EvtAction)onPlayerPress7));
-  mgr.addListener(new EvtPinListener(0, (EvtAction)onPlayerPress8));
+    for (Player player : players) {
+        switches.addSwitch(player.button, onPlayerPressed, NO_REPEAT);
+    }
+
+    switches.addSwitch(controlButtons[0], onCB1Pressed, NO_REPEAT);
+    switches.addSwitch(controlButtons[1], onCB2Pressed, NO_REPEAT);
+}
+
+void setLights(bool state) {
+    for (Player player : players) {
+        internalDigitalDevice().digitalWriteS(player.light, state);
+    }
+    internalDigitalDevice().digitalWriteS(boxLight, state);
 }
 
 void startup() {
-    digitalWrite(8, HIGH);
-    delay(500);
-    digitalWrite(9, HIGH);
-    delay(500);
-    digitalWrite(10, HIGH);
-    delay(500);
-    digitalWrite(11, HIGH);
-    delay(500);
-    digitalWrite(12, HIGH);
-    delay(500);
-    digitalWrite(13, HIGH);
+    for (Player player : players) {
+        internalDigitalDevice().digitalWriteS(player.light, HIGH);
+        delay(500);
+    }
+
+    setLights(LOW);
     delay(500);
 
-    resetLights();
-    delay(500);
-
-    digitalWrite(8, HIGH);
-    delay(250);
-    digitalWrite(9, HIGH);
-    delay(250);
-    digitalWrite(10, HIGH);
-    delay(250);
-    digitalWrite(11, HIGH);
-    delay(250);
-    digitalWrite(12, HIGH);
-    delay(250);
+    for (Player player : players) {
+        internalDigitalDevice().digitalWriteS(player.light, HIGH);
+        delay(500);
+    }
 
     for (int ctr = 0; ctr < 6; ctr++) {
-        digitalWrite(lights[ctr], LOW);
-        digitalWrite(lights[(ctr - 1) % 6], HIGH);
+        digitalWrite(players[ctr].light, LOW);
+        digitalWrite(players[posMod(ctr - 1, 6)].light, HIGH);
         delay(250);
     }
-    digitalWrite(lights[5], HIGH);
+    digitalWrite(players[5].light, HIGH);
     delay(1000);
 
-    resetLights();
+    setLights(LOW);
 }
 
-USE_EVENTUALLY_LOOP(mgr)
+void onPlayerPressed(pinid_t pin, bool healdDown) {
+    Player player;
+    for (Player p : players) {
+        if (p.button == pin) {
+            player = p;
+            break;
+        }
+    }
 
-void onPlayerPress1() {
-    soundPlayer.play(1);
-    digitalWrite(8, HIGH);
+    soundPlayer.play(player.sound);
+    digitalWrite(player.light, HIGH);
     delay(500);
-    digitalWrite(8, LOW);
+    digitalWrite(player.light, LOW);
     soundPlayer.stop();
 }
 
-void onPlayerPress2() {
-    soundPlayer.play(2);
-    digitalWrite(9, HIGH);
-    delay(500);
-    digitalWrite(9, LOW);
-    soundPlayer.stop();
-}
-
-void onPlayerPress3() {
-    soundPlayer.play(3);
-    digitalWrite(10, HIGH);
-    delay(500);
-    digitalWrite(10, LOW);
-    soundPlayer.stop();
-}
-
-void onPlayerPress4() {
-    soundPlayer.play(4);
-    digitalWrite(11, HIGH);
-    delay(500);
-    digitalWrite(11, LOW);
-    soundPlayer.stop();
-}
-
-void onPlayerPress5() {
-    soundPlayer.play(5);
-    digitalWrite(12, HIGH);
-    delay(500);
-    digitalWrite(12, LOW);
-    soundPlayer.stop();
-}
-
-void onPlayerPress6() {
-    soundPlayer.play(6);
-    digitalWrite(13, HIGH);
-    delay(500);
-    digitalWrite(13, LOW);
-    soundPlayer.stop();
-}
-
-void onPlayerPress7() {
+void onCB1Pressed(pinid_t pin, bool healdDown) {
     soundPlayer.play(9);
     digitalWrite(8, HIGH);
     digitalWrite(9, HIGH);
@@ -203,7 +157,7 @@ void onPlayerPress7() {
     soundPlayer.stop();
 }
 
-void onPlayerPress8() {
+void onCB2Pressed(pinid_t pin, bool healdDown) {
     if (first) {
         soundPlayer.play(14);
         digitalWrite(11, HIGH);
@@ -218,38 +172,26 @@ void onPlayerPress8() {
         second = true;
     } else {
         if (second) {
-            timer = new EvtTimeListener(1000, true, (EvtAction)doTimeout);
-            mgr.addListener(timer);
+            timer = taskManager.scheduleOnce(1000, doTimeout);
             second = false;
         } else {
-            mgr.removeListener(timer);
+            if (taskManager.getTask(timer)) {
+                taskManager.cancelTask(timer);
+                timer = NULL;
+            }
             second = true;
         }
     }
 }
 
 void doTimeout() {
-    digitalWrite(8, HIGH);
-    digitalWrite(9, HIGH);
-    digitalWrite(10, HIGH);
-    digitalWrite(11, HIGH);
-    digitalWrite(12, HIGH);
-    digitalWrite(13, HIGH);
+    timer = NULL;
+    setLights(HIGH);
     delay(500);
-    digitalWrite(8, LOW);
-    digitalWrite(9, LOW);
-    digitalWrite(10, LOW);
-    digitalWrite(11, LOW);
-    digitalWrite(12, LOW);
-    digitalWrite(13, LOW);
+    setLights(LOW);
     second = true;
 }
 
-void resetLights() {
-    digitalWrite(8, LOW);
-    digitalWrite(9, LOW);
-    digitalWrite(10, LOW);
-    digitalWrite(11, LOW);
-    digitalWrite(12, LOW);
-    digitalWrite(13, LOW);
+int posMod(int a, int b) {
+  return (b + (a % b)) % b;
 }
