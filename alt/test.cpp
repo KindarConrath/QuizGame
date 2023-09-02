@@ -10,7 +10,7 @@ void onCB1Pressed(pinid_t pin, bool healdDown);
 void onCB2Pressed(pinid_t pin, bool healdDown);
 void doTimeout();
 void startup();
-void resetLights();
+void setLights();
 void setupPins();
 int posMod(int, int);
 
