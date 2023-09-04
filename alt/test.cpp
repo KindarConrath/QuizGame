@@ -28,7 +28,7 @@ struct Player {
 };
 
 static const int numPlayers = 6;
-static const Player players [numPlayers] = {{A0, 8, 1}, {A1, 9, 2}, {A2, 10, 3}, {A3, 11, 4}, {A4, 12, 5}, {A5, 13, 6}};
+static const Player players [numPlayers] = {{A0, 8, 5}, {A1, 9, 6}, {A2, 10, 7}, {A3, 11, 8}, {A4, 12, 9}, {A5, 13, 10}};
 static const int controlButtons [2] = {0, 1};
 static const int boxLight = 14;
 
@@ -59,7 +59,8 @@ void setup() {
 
     setLights(LOW);
 
-    soundPlayer.play(2);
+    delay(500);
+    soundPlayer.play(1);
     startup();
 
     enableButtons();
