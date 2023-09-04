@@ -2,7 +2,7 @@
 #include <IoAbstraction.h>
 
 bool status = HIGH;
-int button = 8;
+int button = A0;
 int led = 13;
 
 void blink() {
