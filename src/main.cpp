@@ -63,6 +63,8 @@ void onRunNext();
 int posMod(int a, int b);
 void flasher(LightSpeed, int);
 void blink();
+void twoWayRunner();
+void twoWayRunnerNext();
 
 taskid_t timeoutTimer = NULL;
 taskid_t animation = NULL;
