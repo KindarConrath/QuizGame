@@ -19,7 +19,7 @@ static const int controlLight = 7;
 bool doLoop = true;
 bool state = HIGH;
 
-void startup() {
+void setup() {
     for (Player player : players) {
         pinMode(player.button, INPUT_PULLUP);
         pinMode(player.light, OUTPUT);
