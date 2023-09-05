@@ -45,9 +45,7 @@ void loop() {
             digitalWrite(player.light, state);
             state = !state;
         }
-    }
-
-    if (!doLoop) {
+    } else {
         for (Player player : players) {
             digitalWrite(player.light, LOW);
             if (digitalRead(player.button) == LOW) {
