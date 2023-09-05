@@ -22,35 +22,14 @@ bool state = HIGH;
 void setup() {
     for (Player player : players) {
         pinMode(player.button, INPUT_PULLUP);
-        pinMode(player.light, OUTPUT);
     }
-
-    pinMode(controlButton1, INPUT_PULLUP);
-    pinMode(controlButton2, INPUT_PULLUP);
-    pinMode(controlLight, OUTPUT);
+    pinMode(13, OUTPUT);
 }
 
 void loop() {
-    if (digitalRead(controlButton1) == LOW) {
-        doLoop = false;
-    } 
-    
-    if (digitalRead(controlButton2) == LOW) {
-        doLoop = true;
-    }
-
-    if (doLoop) {
-        digitalWrite(controlLight, state);
-        for (Player player : players) {
-            digitalWrite(player.light, state);
-            state = !state;
-        }
+    if (digitalRead(players[0].button == LOW)) {
+        digitalWrite(13, HIGH);
     } else {
-        for (Player player : players) {
-            digitalWrite(player.light, LOW);
-            if (digitalRead(player.button) == LOW) {
-                digitalWrite(player.light, HIGH);
-            }
-        }
+        digitalWrite(13, LOW);
     }
 }
