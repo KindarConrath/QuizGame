@@ -20,6 +20,7 @@ bool doLoop = true;
 bool state = HIGH;
 
 void setup() {
+    Serial.print('start');
     for (Player player : players) {
         pinMode(player.button, INPUT_PULLUP);
     }
@@ -27,6 +28,7 @@ void setup() {
 }
 
 void loop() {
+    Serial.print('loop');
     if (digitalRead(players[0].button == LOW)) {
         digitalWrite(13, HIGH);
     } else {
