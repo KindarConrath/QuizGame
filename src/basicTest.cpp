@@ -47,10 +47,12 @@ void loop() {
         }
     }
 
-    for (Player player : players) {
-        digitalWrite(player.light, LOW);
-        if (digitalRead(player.button) == LOW) {
-            digitalWrite(player.light, HIGH);
+    if (!doLoop) {
+        for (Player player : players) {
+            digitalWrite(player.light, LOW);
+            if (digitalRead(player.button) == LOW) {
+                digitalWrite(player.light, HIGH);
+            }
         }
     }
 }
