@@ -21,13 +21,13 @@ bool state = HIGH;
 
 void setup() {
     for (Player player : players) {
-        pinMode(player.button, INPUT_PULLUP);
+        pinMode(player.button, INPUT);
     }
     pinMode(13, OUTPUT);
 }
 
 void loop() {
-    if (digitalRead(players[0].button == LOW)) {
+    if (digitalRead(players[0].button == HIGH)) {
         digitalWrite(13, HIGH);
     } else {
         digitalWrite(13, LOW);
