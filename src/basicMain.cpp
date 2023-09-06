@@ -16,10 +16,8 @@ struct Player {
   unsigned char sound;
 };
 
-int timeoutTime = 8000; // time in miliseconds
-
 static const int numPlayers = 6;
-static const Player players [numPlayers] = {{A0, 8, 1}, {A1, 9, 2}, {A2, 10, 3}, {A3, 11, 4}, {A4, 12, 5}, {A5, 13, 6}}; //, {A6, 14, 7}, {A7, 15, 8}}; 
+static const Player players [numPlayers] = {{A0, 5, 1}, {A1, 6, 2}, {A2, 7, 3}, {A3, 8, 4}, {A4, 9, 5}, {A5, 10, 6}}; //, {A6, 14, 7}, {A7, 15, 8}}; 
 static const int controlButton1 = 1;
 static const int controlButton2 = 0;
 
@@ -28,11 +26,8 @@ GameState currentState = STARTUP;
 void onBuzzerPressed(pinid_t, bool);
 void cb1Pressed(pinid_t, bool);
 void cb2Pressed(pinid_t, bool);
-void doTimeout();
 void setLights(bool);
-int posMod(int a, int b);
-
-taskid_t timeoutTimer = NULL;
+void flashLights();
 
 void setup() {
     switches.init(asIoRef(internalDigitalDevice()), SWITCHES_POLL_EVERYTHING, true);
@@ -45,10 +40,23 @@ void setup() {
 
     switches.addSwitch(controlButton1, cb1Pressed, NO_REPEAT);
     switches.addSwitch(controlButton2, cb2Pressed, NO_REPEAT);
+
+    flashLights();
+    currentState = PLAYING;
 }
 
 void loop() {
     taskManager.runLoop();
+}
+
+void flashLights() {
+  setLights(HIGH);
+  delay(500);
+  setLights(LOW);
+  delay(250);
+  setLights(HIGH);
+  delay(500);
+  setLights(LOW);
 }
 
 void onBuzzerPressed(pinid_t pin, bool healdDown) {
@@ -63,46 +71,20 @@ void onBuzzerPressed(pinid_t pin, bool healdDown) {
         }
 
         internalDigitalDevice().digitalWriteS(currentPlayer.light, HIGH);
-        timeoutTimer = taskManager.scheduleOnce(timeoutTime, doTimeout);
     }
 }
 
 void cb1Pressed(pinid_t pin, bool healdDown) {
   if (currentState == ANSWERING) {
-    taskManager.cancelTask(timeoutTimer);
-    timeoutTimer = NULL;
-    currentState = WAITING;
-  } else if (currentState == WAITING) {
-    setLights(LOW);
     currentState = PLAYING;
-  } else if (currentState == PLAYING) {
-    doTimeout();
-  } else if (currentState == STARTUP) {
-    currentState = PLAYING;
-    setLights(LOW);
+    flashLights();
   }
 }
 
 void cb2Pressed(pinid_t pin, bool healdDown) {
-  if (currentState == ANSWERING || currentState == WAITING) {
-    if (timeoutTimer) {
-      taskManager.cancelTask(timeoutTimer);
-      timeoutTimer = NULL;
-    }
-    currentState = PLAYING;
-  }
-}
-
-struct anim {
-  bool state;
-  int time;
-};
-
-void doTimeout() {
-  setLights(LOW);
   if (currentState == ANSWERING) {
-    currentState = WAITING;
-    timeoutTimer = NULL;
+    currentState = PLAYING;
+    flashLights();
   }
 }
 
