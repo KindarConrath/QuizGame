@@ -4,7 +4,7 @@
 #include <SoftwareSerial.h>
 
 bool status = HIGH;
-int button = 8;
+int button = A0;
 int led = 13;
 
 // Use pins 2 and 3 to communicate with DFPlayer Mini
@@ -18,9 +18,7 @@ SoftwareSerial softwareSerial(PIN_MP3_RX, PIN_MP3_TX);
 DFRobotDFPlayerMini soundPlayer;
 
 void playSound(pinid_t pin, bool held) {
-    if (pin == button) {
-        soundPlayer.play(1);
-    }
+    soundPlayer.play(1);
 }
 
 void blink() {
@@ -32,6 +30,7 @@ void setup() {
     switches.init(asIoRef(internalDigitalDevice()), SWITCHES_POLL_EVERYTHING, true);
 
     internalDigitalDevice().pinMode(13, OUTPUT);
+    internalDigitalDevice().pinMode(A0, INPUT_PULLUP);
 
     taskManager.scheduleFixedRate(500, blink);
 
